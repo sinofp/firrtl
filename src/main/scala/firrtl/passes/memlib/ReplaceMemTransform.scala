@@ -32,8 +32,10 @@ object PassConfigUtil {
           nextPassOption(map + (InputConfigFileName -> value), tail)
         case "-o" :: value :: tail =>
           nextPassOption(map + (OutputConfigFileName -> value), tail)
+        // @todo: runtime deprecate this
         case "-c" :: value :: tail =>
           nextPassOption(map + (PassCircuitName -> value), tail)
+        // @todo: runtime deprecate this
         case "-m" :: value :: tail =>
           nextPassOption(map + (PassModuleName -> value), tail)
         case option :: tail =>
@@ -79,12 +81,11 @@ object ReplSeqMemAnnotation {
   Pass to replace sequential memories with blackboxes + configuration file
 
 Usage:
-  --replSeqMem -c:<circuit>:-i:<filename>:-o:<filename>
+  --replSeqMem -i:<filename>:-o:<filename>
   *** Note: sub-arguments to --replSeqMem should be delimited by : and not white space!
 
 Required Arguments:
   -o<filename>         Specify the output configuration file
-  -c<circuit>          Specify the target circuit
 
 Optional Arguments:
   -i<filename>         Specify the input configuration file (for additional optimizations)

@@ -132,6 +132,14 @@ class ReplSeqMem extends SeqTransform with HasShellOptions with DependencyAPIMig
       helpText = "Blackbox and emit a configuration file for each sequential memory",
       shortOption = Some("frsq"),
       helpValueName = Some("-c:<circuit>:-i:<file>:-o:<file>")
+    ),
+    new ShellOption[Unit](
+      longOption = "gen-mem-verilog",
+      toAnnotationSeq =
+        _ => Seq(GenVerilogMemBehaviorModelAnno(Seq.empty), RunFirrtlTransformAnnotation(new ReplSeqMem)),
+      helpText = "Blackbox and emit a Verilog module for each sequential memory",
+      shortOption = Some("gmv"),
+      helpValueName = None
     )
   )
 
@@ -145,6 +153,7 @@ class ReplSeqMem extends SeqTransform with HasShellOptions with DependencyAPIMig
       new ResolveMemoryReference,
       new ReplaceMemMacros,
       new WiringTransform,
-      new DumpMemoryAnnotations
+      new DumpMemoryAnnotations,
+      new VlsiMemGenTransform
     )
 }

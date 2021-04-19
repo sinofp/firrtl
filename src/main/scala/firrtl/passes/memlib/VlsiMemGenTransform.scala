@@ -1,39 +1,43 @@
 package firrtl.passes.memlib
 
-import firrtl.{CircuitState, DependencyAPIMigration, Transform}
+import firrtl.Utils.error
+import firrtl.annotations.NoTargetAnnotation
+import firrtl.{bitWidth, CircuitState, DependencyAPIMigration, Transform}
 import firrtl.stage.Forms
 
-class VlsiMemGenTransform(outputConfig: String) extends Transform with DependencyAPIMigration {
+case class GenVerilogMemBehaviorModelAnno(annotatedMemories: Seq[DefAnnotatedMemory]) extends NoTargetAnnotation
+
+class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
   override def prerequisites = Forms.MidForm
   override protected def execute(state: CircuitState): CircuitState = {
-
-    def parseLine(line: String): (String, Int, Int, Int, Int, Array[String]) = {
-      val tokens = line.split(' ')
-      val _ :: name :: _ :: depth :: _ :: width :: _ :: ports :: tail = tokens.toList
-      val maskGran = (if (tail.isEmpty) width else tail.last).toInt
-      (name, width.toInt, depth.toInt, maskGran, width.toInt / maskGran, ports.split(','))
-    }
 
     // No `MaskedWritePort`, just `WritePort` with `masked` == true
     case class Port(prefix: String, `type`: MemPort, masked: Boolean)
 
-    def parsePort(ports: Array[String]): Seq[Port] = {
-      val readPorts = ports.filter(_ == "read")
-      val writePorts = ports.zipWithIndex.filter { case (str, idx) => str == "write" || str == "mwrite" }.map(_._2)
-      val rwPorts = ports.zipWithIndex.filter { case (str, idx) => str == "rw" || str == "mrw" }.map(_._2)
+    def parse(annotatedMemory: DefAnnotatedMemory): (String, Int, Int, Int, Int, Seq[Port]) = {
+      val masked = annotatedMemory.maskGran.isDefined
 
-      readPorts.indices.map(number => Port(s"R${number}_", ReadPort, masked = true)) ++
-        writePorts.zipWithIndex.map { case (idx, number) =>
-          Port(s"W${number}_", WritePort, ports(idx).startsWith("m"))
-        } ++
-        rwPorts.zipWithIndex.map { case (idx, number) =>
-          Port(s"RW${number}_", ReadWritePort, ports(idx).startsWith("m"))
-        }
+      val name = annotatedMemory.name
+      val width = {
+        val width = bitWidth(annotatedMemory.dataType)
+        require(width <= Int.MaxValue)
+        width.toInt
+      }
+      val depth = annotatedMemory.depth.toInt
+      val maskGran = if (masked) {
+        val maskGran = annotatedMemory.maskGran.get
+        require(maskGran <= Int.MaxValue)
+        maskGran.toInt
+      } else width
+      val ports = annotatedMemory.readers.indices.map(number => Port(s"R${number}_", ReadPort, masked)) ++
+        annotatedMemory.writers.indices.map(number => Port(s"W${number}_", WritePort, masked)) ++
+        annotatedMemory.readwriters.indices.map(number => Port(s"RW${number}_", ReadWritePort, masked))
+
+      (name, width, depth, maskGran, width / maskGran, ports)
     }
 
-    def genMem(name: String, width: Int, depth: Int, maskGran: Int, maskSeg: Int, _ports: Array[String]): String = {
+    def genMem(name: String, width: Int, depth: Int, maskGran: Int, maskSeg: Int, ports: Seq[Port]): String = {
       val addrWidth = math.max(math.ceil(math.log(depth) / math.log(2)).toInt, 1)
-      val ports = parsePort(_ports)
       val readPorts = ports.filter(port => port.`type` == ReadPort || port.`type` == ReadWritePort)
 
       def genPortSpec(port: Port): Seq[String] = {
@@ -135,18 +139,20 @@ class VlsiMemGenTransform(outputConfig: String) extends Transform with Dependenc
          |endmodule""".stripMargin
     }
 
-    def main(confFile: String): Unit = {
-      val file = io.Source.fromFile(confFile)
-      for (line <- file.getLines()) {
-        val parsedLine = (genMem _).tupled(parseLine(line))
-        println(parsedLine)
+    def main(annotatedMemories: Seq[DefAnnotatedMemory]): Unit = {
+      for (mem <- annotatedMemories) {
+        val verilog = (genMem _).tupled(parse(mem))
+        println(verilog)
       }
-      file.close()
     }
 
-    main(outputConfig)
-
-    //todo
-    state
+    val annos = state.annotations.collect { case a: GenVerilogMemBehaviorModelAnno => a }
+    annos match {
+      case Nil => state
+      case Seq(GenVerilogMemBehaviorModelAnno(mems)) =>
+        main(mems)
+        state
+      case _ => error("Unexpected transform annotation")
+    }
   }
 }

@@ -1,11 +1,14 @@
 package firrtl.passes.memlib
 
 import firrtl.Utils.error
-import firrtl.annotations.NoTargetAnnotation
+import firrtl.annotations.{CircuitName, ModuleName, NoTargetAnnotation}
 import firrtl.{bitWidth, CircuitState, DependencyAPIMigration, Transform}
 import firrtl.stage.Forms
+import firrtl.transforms.BlackBoxInlineAnno
 
-case class GenVerilogMemBehaviorModelAnno() extends NoTargetAnnotation with HasAnnotatedMemories
+case class GenVerilogMemBehaviorModelAnno(outputFileName: String, genBlackBox: Boolean)
+    extends NoTargetAnnotation
+    with HasAnnotatedMemories
 
 class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
   override def prerequisites = Forms.MidForm
@@ -14,7 +17,10 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
     // No `MaskedWritePort`, just `WritePort` with `masked` == true
     case class Port(prefix: String, `type`: MemPort, masked: Boolean)
 
-    def parse(annotatedMemory: DefAnnotatedMemory): (String, Int, Int, Int, Int, Seq[Port]) = {
+    def parse(
+      annotatedMemory: DefAnnotatedMemory,
+      genBlackBox:     Boolean
+    ): (String, Int, Int, Int, Int, Seq[Port], Boolean) = {
       val masked = annotatedMemory.maskGran.isDefined
 
       val name = annotatedMemory.name
@@ -33,10 +39,18 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
         annotatedMemory.writers.indices.map(number => Port(s"W${number}_", WritePort, masked)) ++
         annotatedMemory.readwriters.indices.map(number => Port(s"RW${number}_", ReadWritePort, masked))
 
-      (name, width, depth, maskGran, width / maskGran, ports)
+      (name, width, depth, maskGran, width / maskGran, ports, genBlackBox)
     }
 
-    def genMem(name: String, width: Int, depth: Int, maskGran: Int, maskSeg: Int, ports: Seq[Port]): String = {
+    def genMem(
+      name:        String,
+      width:       Int,
+      depth:       Int,
+      maskGran:    Int,
+      maskSeg:     Int,
+      ports:       Seq[Port],
+      genBlackBox: Boolean
+    ): String = {
       val addrWidth = math.max(math.ceil(math.log(depth) / math.log(2)).toInt, 1)
       val readPorts = ports.filter(port => port.`type` == ReadPort || port.`type` == ReadWritePort)
 
@@ -127,32 +141,31 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
       }
       val combinational = readPorts.flatMap(genCombinational)
 
+      val body = if (genBlackBox) "" else s"""
+                                             |  ${decl.mkString("\n  ")}
+                                             |  ${sequential.mkString("\n  ")}
+                                             |  ${combinational.mkString("\n  ")}""".stripMargin
+
       s"""
          |module $name(
          |  ${portSpec.mkString(",\n  ")}
          |);
          |
-         |  ${decl.mkString("\n  ")}
-         |  ${sequential.mkString("\n  ")}
-         |  ${combinational.mkString("\n  ")}
+         |$body
          |
          |endmodule""".stripMargin
-    }
-
-    def main(annotatedMemories: Seq[DefAnnotatedMemory]): Unit = {
-      for (mem <- annotatedMemories) {
-        val verilog = (genMem _).tupled(parse(mem))
-        println(verilog)
-      }
     }
 
     val annos = state.annotations.collectFirst { case a: GenVerilogMemBehaviorModelAnno => a }
     annos match {
       case None => state
-      case g @ Some(GenVerilogMemBehaviorModelAnno()) =>
-        main(g.get.annotatedMemories)
-        state
-      case Some(_) => error("Unexpected transform annotation")
+      case g @ Some(GenVerilogMemBehaviorModelAnno(outputFileName, genBlackBox)) =>
+        val verilog = g.get.annotatedMemories.map(mem => (genMem _).tupled(parse(mem, genBlackBox))).mkString("\n")
+        // first argument of BlackBoxInlineAnno is ignored in BlackBoxSourceHelper, so I make up a fake name
+        val blackBoxInlineAnno =
+          BlackBoxInlineAnno(ModuleName("vlsi_mem_gen", CircuitName("vlsi_mem_gen")), outputFileName, verilog)
+        state.copy(annotations = state.annotations :+ blackBoxInlineAnno)
+      case _ => error("Unexpected transform annotation")
     }
   }
 }

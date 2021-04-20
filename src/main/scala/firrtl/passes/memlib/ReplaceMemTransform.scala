@@ -14,7 +14,8 @@ import java.io.{CharArrayWriter, PrintWriter}
 
 sealed trait PassOption
 case object InputConfigFileName extends PassOption
-case object OutputConfigFileName extends PassOption
+case object OutputFileName extends PassOption
+case object GenBlackBox extends PassOption
 case object PassCircuitName extends PassOption
 case object PassModuleName extends PassOption
 
@@ -25,13 +26,16 @@ object PassConfigUtil {
     // can't use space to delimit sub arguments (otherwise, Driver.scala will throw error)
     val passArgList = t.split(":").toList
 
+    @tailrec
     def nextPassOption(map: PassOptionMap, list: List[String]): PassOptionMap = {
       list match {
         case Nil => map
         case "-i" :: value :: tail =>
           nextPassOption(map + (InputConfigFileName -> value), tail)
         case "-o" :: value :: tail =>
-          nextPassOption(map + (OutputConfigFileName -> value), tail)
+          nextPassOption(map + (OutputFileName -> value), tail)
+        case "-b" :: tail =>
+          nextPassOption(map + (OutputFileName -> true.toString), tail)
         // @todo: runtime deprecate this
         case "-c" :: value :: tail =>
           nextPassOption(map + (PassCircuitName -> value), tail)
@@ -75,8 +79,22 @@ private[memlib] case class AnnotatedMemoriesAnnotation(annotatedMemories: List[D
     extends NoTargetAnnotation
 
 object ReplSeqMemAnnotation {
-  def parse(t: String): ReplSeqMemAnnotation = {
-    val usage = """
+  def parse(t: String, genVerilog: Boolean = false): ReplSeqMemAnnotation = {
+    val usage = if (genVerilog) """
+[Optional] GenMemVerilog
+  Pass to replace sequential memories with blackboxes + Verilog file
+
+Usage:
+  --gen-mem-verilog -i:<filename>:-o:<filename>:-b
+  *** Note: sub-arguments to --gen-mem-verilog should be delimited by : and not white space!
+
+Required Arguments:
+  -o<filename>         Specify the output Verilog file
+
+Optional Arguments:
+  -i<filename>         Specify the input configuration file (for additional optimizations)
+  -b                   Generate Verilog BlackBox
+""" else """
 [Optional] ReplSeqMem
   Pass to replace sequential memories with blackboxes + configuration file
 
@@ -93,11 +111,12 @@ Optional Arguments:
 
     val passOptions = PassConfigUtil.getPassOptions(t, usage)
     val outputConfig = passOptions.getOrElse(
-      OutputConfigFileName,
+      OutputFileName,
       error("No output config file provided for ReplSeqMem!" + usage)
     )
-    val inputFileName = PassConfigUtil.getPassOptions(t).getOrElse(InputConfigFileName, "")
-    ReplSeqMemAnnotation(inputFileName, outputConfig)
+    val inputFileName = passOptions.getOrElse(InputConfigFileName, "")
+    val genBlackBox = passOptions.contains(GenBlackBox)
+    ReplSeqMemAnnotation(inputFileName, outputConfig, genVerilog, genBlackBox)
   }
 }
 
@@ -133,10 +152,13 @@ class ReplSeqMem extends SeqTransform with HasShellOptions with DependencyAPIMig
       shortOption = Some("frsq"),
       helpValueName = Some("-c:<circuit>:-i:<file>:-o:<file>")
     ),
-    new ShellOption[Unit](
+    new ShellOption[String](
       longOption = "gen-mem-verilog",
-      toAnnotationSeq =
-        _ => Seq(GenVerilogMemBehaviorModelAnno(Seq.empty), RunFirrtlTransformAnnotation(new ReplSeqMem)),
+      toAnnotationSeq = (a: String) =>
+        Seq(
+          passes.memlib.ReplSeqMemAnnotation.parse(a, genVerilog = true),
+          RunFirrtlTransformAnnotation(new ReplSeqMem)
+        ),
       helpText = "Blackbox and emit a Verilog module for each sequential memory",
       shortOption = Some("gmv"),
       helpValueName = None

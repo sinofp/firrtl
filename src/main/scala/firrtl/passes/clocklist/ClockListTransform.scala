@@ -30,7 +30,7 @@ Usage:
     //Parse pass options
     val passOptions = PassConfigUtil.getPassOptions(t, usage)
     val outputConfig = passOptions.getOrElse(
-      OutputConfigFileName,
+      OutputFileName,
       error("No output config file provided for ClockList!" + usage)
     )
     val passCircuit = passOptions.getOrElse(

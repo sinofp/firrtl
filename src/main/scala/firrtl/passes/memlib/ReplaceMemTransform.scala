@@ -9,7 +9,9 @@ import firrtl.annotations._
 import firrtl.options.{CustomFileEmission, HasShellOptions, ShellOption}
 import firrtl.passes.wiring._
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
+import firrtl.transforms.BlackBoxSourceHelper
 
+import scala.annotation.tailrec
 import java.io.{CharArrayWriter, PrintWriter}
 
 sealed trait PassOption
@@ -85,11 +87,9 @@ object ReplSeqMemAnnotation {
   Pass to replace sequential memories with blackboxes + Verilog file
 
 Usage:
-  --gen-mem-verilog -i:<filename>:-o:<filename>:-b
+  --gen-mem-verilog -i:<filename>:-b
   *** Note: sub-arguments to --gen-mem-verilog should be delimited by : and not white space!
-
-Required Arguments:
-  -o<filename>         Specify the output Verilog file
+            output file name is determined by memory name, one module one file.
 
 Optional Arguments:
   -i<filename>         Specify the input configuration file (for additional optimizations)
@@ -109,13 +109,18 @@ Optional Arguments:
   -i<filename>         Specify the input configuration file (for additional optimizations)
 """
 
-    val passOptions = PassConfigUtil.getPassOptions(t, usage)
-    val outputConfig = passOptions.getOrElse(
-      OutputFileName,
-      error("No output config file provided for ReplSeqMem!" + usage)
-    )
-    val inputFileName = passOptions.getOrElse(InputConfigFileName, "")
-    val genBlackBox = passOptions.contains(GenBlackBox)
+    val (inputFileName, outputConfig, genBlackBox) =
+      if (genVerilog && t.isEmpty) ("", "", false)
+      else {
+        val passOptions = PassConfigUtil.getPassOptions(t, usage)
+        val outputConfig = passOptions.getOrElse(
+          OutputFileName,
+          error("No output config file provided for ReplSeqMem!" + usage)
+        )
+        val inputFileName = passOptions.getOrElse(InputConfigFileName, "")
+        val genBlackBox = passOptions.contains(GenBlackBox)
+        (inputFileName, outputConfig, genBlackBox)
+      }
     ReplSeqMemAnnotation(inputFileName, outputConfig, genVerilog, genBlackBox)
   }
 }
@@ -176,6 +181,7 @@ class ReplSeqMem extends SeqTransform with HasShellOptions with DependencyAPIMig
       new ReplaceMemMacros,
       new WiringTransform,
       new DumpMemoryAnnotations,
-      new VlsiMemGenTransform
+      new VlsiMemGenTransform,
+      new BlackBoxSourceHelper
     )
 }

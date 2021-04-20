@@ -6,9 +6,7 @@ import firrtl.{bitWidth, CircuitState, DependencyAPIMigration, Transform}
 import firrtl.stage.Forms
 import firrtl.transforms.BlackBoxInlineAnno
 
-case class GenVerilogMemBehaviorModelAnno(outputFileName: String, genBlackBox: Boolean)
-    extends NoTargetAnnotation
-    with HasAnnotatedMemories
+case class GenVerilogMemBehaviorModelAnno(genBlackBox: Boolean) extends NoTargetAnnotation with HasAnnotatedMemories
 
 class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
   override def prerequisites = Forms.MidForm
@@ -50,7 +48,7 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
       maskSeg:     Int,
       ports:       Seq[Port],
       genBlackBox: Boolean
-    ): String = {
+    ): (String, String) = {
       val addrWidth = math.max(math.ceil(math.log(depth) / math.log(2)).toInt, 1)
       val readPorts = ports.filter(port => port.`type` == ReadPort || port.`type` == ReadWritePort)
 
@@ -146,25 +144,27 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
                                              |  ${sequential.mkString("\n  ")}
                                              |  ${combinational.mkString("\n  ")}""".stripMargin
 
-      s"""
-         |module $name(
-         |  ${portSpec.mkString(",\n  ")}
-         |);
-         |
-         |$body
-         |
-         |endmodule""".stripMargin
+      (name + ".v", s"""
+                       |module $name(
+                       |  ${portSpec.mkString(",\n  ")}
+                       |);
+                       |
+                       |$body
+                       |
+                       |endmodule""".stripMargin)
     }
 
     val annos = state.annotations.collectFirst { case a: GenVerilogMemBehaviorModelAnno => a }
     annos match {
       case None => state
-      case g @ Some(GenVerilogMemBehaviorModelAnno(outputFileName, genBlackBox)) =>
-        val verilog = g.get.annotatedMemories.map(mem => (genMem _).tupled(parse(mem, genBlackBox))).mkString("\n")
+      case g @ Some(GenVerilogMemBehaviorModelAnno(genBlackBox)) =>
+        val verilogs = g.get.annotatedMemories.map(mem => (genMem _).tupled(parse(mem, genBlackBox)))
         // first argument of BlackBoxInlineAnno is ignored in BlackBoxSourceHelper, so I make up a fake name
-        val blackBoxInlineAnno =
-          BlackBoxInlineAnno(ModuleName("vlsi_mem_gen", CircuitName("vlsi_mem_gen")), outputFileName, verilog)
-        state.copy(annotations = state.annotations :+ blackBoxInlineAnno)
+        val blackBoxInlineAnnos = verilogs.map {
+          case (name, content) =>
+            BlackBoxInlineAnno(ModuleName("vlsi_mem_gen", CircuitName("vlsi_mem_gen")), name, content)
+        }
+        state.copy(annotations = state.annotations ++ blackBoxInlineAnnos)
       case _ => error("Unexpected transform annotation")
     }
   }

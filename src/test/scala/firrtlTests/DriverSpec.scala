@@ -198,7 +198,7 @@ class DriverSpec extends AnyFreeSpec with Matchers with BackendCompilationUtilit
         val firrtlOptions = optionsManager.firrtlOptions
         firrtlOptions.annotations.length should be(1)
         firrtlOptions.annotations.head should matchPattern {
-          case ReplSeqMemAnnotation("infile1", "outfile1") =>
+          case ReplSeqMemAnnotation("infile1", "outfile1", _, _) =>
         }
       }
     }

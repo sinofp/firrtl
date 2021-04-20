@@ -5,7 +5,7 @@ import firrtl.annotations.NoTargetAnnotation
 import firrtl.{bitWidth, CircuitState, DependencyAPIMigration, Transform}
 import firrtl.stage.Forms
 
-case class GenVerilogMemBehaviorModelAnno(annotatedMemories: Seq[DefAnnotatedMemory]) extends NoTargetAnnotation
+case class GenVerilogMemBehaviorModelAnno() extends NoTargetAnnotation with HasAnnotatedMemories
 
 class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
   override def prerequisites = Forms.MidForm
@@ -146,13 +146,13 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
       }
     }
 
-    val annos = state.annotations.collect { case a: GenVerilogMemBehaviorModelAnno => a }
+    val annos = state.annotations.collectFirst { case a: GenVerilogMemBehaviorModelAnno => a }
     annos match {
-      case Nil => state
-      case Seq(GenVerilogMemBehaviorModelAnno(mems)) =>
-        main(mems)
+      case None => state
+      case g @ Some(GenVerilogMemBehaviorModelAnno()) =>
+        main(g.get.annotatedMemories)
         state
-      case _ => error("Unexpected transform annotation")
+      case Some(_) => error("Unexpected transform annotation")
     }
   }
 }

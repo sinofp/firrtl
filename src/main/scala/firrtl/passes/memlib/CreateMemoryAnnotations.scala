@@ -18,8 +18,11 @@ class CreateMemoryAnnotations extends Transform with DependencyAPIMigration {
 
   def execute(state: CircuitState): CircuitState = {
     state.copy(annotations = state.annotations.flatMap {
-      case ReplSeqMemAnnotation(inputFileName, outputConfig) =>
-        Seq(MemLibOutConfigFileAnnotation(outputConfig, Nil)) ++ {
+      case ReplSeqMemAnnotation(inputFileName, outputConfig, genVerilog, genBlackBox) =>
+        Seq(
+          if (genVerilog) GenVerilogMemBehaviorModelAnno(genBlackBox, Nil)
+          else MemLibOutConfigFileAnnotation(outputConfig, Nil)
+        ) ++ {
           if (inputFileName.isEmpty) None
           else if (new File(inputFileName).exists) {
             import CustomYAMLProtocol._

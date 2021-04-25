@@ -6,7 +6,8 @@ import firrtl.{bitWidth, CircuitState, DependencyAPIMigration, Transform}
 import firrtl.stage.Forms
 import firrtl.transforms.BlackBoxInlineAnno
 
-case class GenVerilogMemBehaviorModelAnno(genBlackBox: Boolean) extends NoTargetAnnotation with HasAnnotatedMemories
+case class GenVerilogMemBehaviorModelAnno(genBlackBox: Boolean, annotatedMemories: Seq[DefAnnotatedMemory])
+    extends NoTargetAnnotation
 
 class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
   override def prerequisites = Forms.MidForm
@@ -157,8 +158,8 @@ class VlsiMemGenTransform extends Transform with DependencyAPIMigration {
     val annos = state.annotations.collectFirst { case a: GenVerilogMemBehaviorModelAnno => a }
     annos match {
       case None => state
-      case g @ Some(GenVerilogMemBehaviorModelAnno(genBlackBox)) =>
-        val verilogs = g.get.annotatedMemories.map(mem => (genMem _).tupled(parse(mem, genBlackBox)))
+      case Some(GenVerilogMemBehaviorModelAnno(genBlackBox, mems)) =>
+        val verilogs = mems.map(mem => (genMem _).tupled(parse(mem, genBlackBox)))
         // first argument of BlackBoxInlineAnno is ignored in BlackBoxSourceHelper, so I make up a fake name
         val blackBoxInlineAnnos = verilogs.map {
           case (name, content) =>

@@ -21,9 +21,12 @@ class DumpMemoryAnnotations extends Transform with DependencyAPIMigration {
           case a: MemLibOutConfigFileAnnotation =>
             a.copy(annotatedMemories = annotatedMemories)
           // todo convert xxx to verilogs here.
+          case a: GenVerilogMemBehaviorModelAnno =>
+            a.copy(annotatedMemories = annotatedMemories)
         }
-      case MemLibOutConfigFileAnnotation(_, Nil) => Nil
-      case a                                     => Seq(a)
+      case MemLibOutConfigFileAnnotation(_, Nil)  => Nil
+      case GenVerilogMemBehaviorModelAnno(_, Nil) => Nil
+      case a                                      => Seq(a)
     })
   }
 }

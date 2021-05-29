@@ -144,9 +144,8 @@ object DriverCompatibility {
       case None =>
         topName(annotations) match {
           case Some(n) =>
-            // @todo remove java.io.File
             val filename = targetDir(annotations) + "/" + n + ".anno"
-            if (new java.io.File(filename).exists) {
+            if (os.exists(FileUtils.getPath(filename))) {
               StageUtils.dramaticWarning(
                 s"Implicit reading of the annotation file is deprecated! Use an explict --annotation-file argument."
               )

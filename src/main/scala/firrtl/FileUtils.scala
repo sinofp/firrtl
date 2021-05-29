@@ -3,6 +3,7 @@
 package firrtl
 
 import firrtl.options.StageUtils
+import os.{Path, RelPath, SubPath}
 
 import scala.collection.Seq
 import scala.sys.process.{stringSeqToProcess, BasicIO, ProcessLogger}
@@ -160,5 +161,14 @@ object FileUtils {
     val text = scala.io.Source.fromInputStream(inputStream).mkString
     inputStream.close()
     text
+  }
+
+  /** Get os.Path from String
+    * @param pathName an absolute or relative path string
+    */
+  def getPath(pathName: String): os.Path = os.FilePath(pathName) match {
+    case path: os.Path    => path
+    case sub:  os.SubPath => os.pwd / sub
+    case rel:  os.RelPath => os.pwd / rel
   }
 }

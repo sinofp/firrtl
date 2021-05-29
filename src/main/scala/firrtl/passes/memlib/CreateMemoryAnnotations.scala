@@ -19,8 +19,7 @@ class CreateMemoryAnnotations extends Transform with DependencyAPIMigration {
       case ReplSeqMemAnnotation(inputFileName, outputConfig) =>
         Seq(MemLibOutConfigFileAnnotation(outputConfig, Nil)) ++ {
           if (inputFileName.isEmpty) None
-          // @todo remove java.io.File
-          else if (new java.io.File(inputFileName).exists) {
+          else if (os.exists(FileUtils.getPath(inputFileName))) {
             import CustomYAMLProtocol._ // implicit parameter for ↓
             Some(PinAnnotation(new YamlFileReader(inputFileName).parse[Config].map(_.pin.name)))
           } else error("Input configuration file does not exist!")

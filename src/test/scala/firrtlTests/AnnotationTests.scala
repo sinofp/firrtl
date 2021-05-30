@@ -504,15 +504,9 @@ class JsonAnnotationTests extends AnnotationTests {
       PinAnnotation(Seq("sea-lion", "monk-seal"))
     ).toArray
 
-    // @todo remove java.io.File
-    val annoFile = new java.io.File("temp-anno")
-    // @todo remove java.io
-    val writer = new java.io.FileWriter(annoFile)
-    writer.write(JsonProtocol.serialize(annos))
-    writer.close()
+    val annoFile = os.temp(contents = JsonProtocol.serialize(annos), prefix = "temp-anno")
 
-    val text = FileUtils.getText(annoFile)
-    annoFile.delete()
+    val text = os.read(annoFile)
 
     val readAnnos = JsonProtocol.deserializeTry(text).get
 
@@ -528,21 +522,15 @@ class JsonAnnotationTests extends AnnotationTests {
                    |    z <= x
                    |    node y = x""".stripMargin
     val testDir = BackendCompilationUtilities.createTestDirectory(this.getClass.getSimpleName)
-    // @todo remove java.io.File
-    val annoFile = new java.io.File(testDir, "anno.json")
+    val annoFile = os.Path(testDir.getAbsolutePath) / "anno.json"
 
-    annoFileText.foreach { text =>
-      // @todo remove java.io
-      val w = new java.io.FileWriter(annoFile)
-      w.write(text)
-      w.close()
-    }
+    annoFileText.foreach(os.write(annoFile, _))
 
     new ExecutionOptionsManager("annos") with HasFirrtlOptions {
       commonOptions = CommonOptions(targetDirName = testDir.getPath)
       firrtlOptions = FirrtlExecutionOptions(
         firrtlSource = Some(source),
-        annotationFileNames = List(annoFile.getPath)
+        annotationFileNames = List(annoFile.toString)
       )
     }
   }

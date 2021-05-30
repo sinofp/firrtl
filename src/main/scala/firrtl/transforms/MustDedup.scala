@@ -216,30 +216,22 @@ class MustDeduplicateTransform extends Transform with DependencyAPIMigration {
       // Write reports and modules to disk
       val dirName = state.annotations.collectFirst { case MustDeduplicateReportDirectory(dir) => dir }
         .getOrElse("dedup_failures")
-      // @todo remove java.io
-      val dir = new java.io.File(dirName)
+      val dir = FileUtils.getPath(dirName)
       logger.error(s"Writing error report(s) to ${dir}...")
       FileUtils.makeDirectory(dir.toString)
       for ((report, idx) <- reports.zipWithIndex) {
-        // @todo remove java.io
-        val f = new java.io.File(dir, s"report_$idx.rpt")
+        val f = dir / s"report_$idx.rpt"
         logger.error(s"Writing $f...")
-        // @todo remove java.io
-        val fw = new java.io.FileWriter(f)
-        fw.write(report)
-        fw.close()
+        os.write(f, report)
       }
 
-      // @todo remove java.io
-      val modsDir = new java.io.File(dir, "modules")
+      val modsDir = dir / "modules"
       FileUtils.makeDirectory(modsDir.toString)
       logger.error(s"Writing relevant modules to $modsDir...")
       val relevantModule = dedupFailures.flatMap(_.relevantMods.map(_.value)).toSet
       for (mod <- state.circuit.modules if relevantModule(mod.name)) {
-        // @todo remove java.io
-        val fw = new java.io.FileWriter(new java.io.File(modsDir, s"${mod.name}.fir"))
-        fw.write(mod.serialize)
-        fw.close()
+        val f = modsDir / s"${mod.name}.fir"
+        os.write(f, mod.serialize)
       }
 
       val msg = s"Modules marked 'must deduplicate' failed to deduplicate! See error reports in $dirName"

@@ -2,7 +2,7 @@
 
 package firrtlTests.options
 
-import firrtl.AnnotationSeq
+import firrtl.{AnnotationSeq, FileUtils}
 import firrtl.options.{Dependency, DependencyManagerException, Phase, PhaseManager}
 
 import sys.process._
@@ -386,36 +386,28 @@ class PhaseManagerSpec extends AnyFlatSpec with Matchers {
 
   def writeGraphviz(pm: PhaseManager, dir: String): Unit = {
 
-    // @todo remove java.io
     /** Convert a Graphviz file to PNG using */
-    def maybeToPng(f: java.io.File): Unit = try {
-      s"dot -Tpng -O ${f}".!
+    def maybeToPng(f: os.Path): Unit = try {
+      s"dot -Tpng -O ${f.toString}".!
     } catch {
+      // @todo remove java.io
       case _: java.io.IOException =>
     }
 
-    val d = new java.io.File(dir)
-    d.mkdirs()
+    val d = FileUtils.getPath(dir)
+    os.makeDir.all(d)
 
     {
-      // @todo remove java.io
-      val f = new java.io.File(d + "/dependencyGraph.dot")
-      // @todo remove java.io
-      val w = new java.io.PrintWriter(f)
-      w.write(pm.dependenciesToGraphviz)
-      w.close
+      val f = d / "/dependencyGraph.dot"
+      os.write(f, pm.dependenciesToGraphviz)
       maybeToPng(f)
     }
 
     {
-      // @todo remove java.io
-      val f = new java.io.File(d + "/transformOrder.dot")
-      // @todo remove java.io
-      val w = new java.io.PrintWriter(new java.io.File(d + "/transformOrder.dot"))
+      val f = d / "/transformOrder.dot"
       try {
         info("transform order:\n" + pm.prettyPrint("    "))
-        w.write(pm.transformOrderToGraphviz())
-        w.close
+        os.write(f, pm.transformOrderToGraphviz())
         maybeToPng(f)
       } catch {
         case _: DependencyManagerException =>

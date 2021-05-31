@@ -288,11 +288,13 @@ class CheckCombLoopsSpec extends LeanTransformSpec(Seq(Dependency[CheckCombLoops
 class CheckCombLoopsCommandLineSpec extends FirrtlFlatSpec {
 
   val testDir = createTestDirectory("CombLoopChecker")
-  // @todo remove java.nio.file.Paths
-  val inputFile = java.nio.file.Paths.get(getClass.getResource("/features/HasLoops.fir").toURI()).toFile()
-  // @todo remove java.io.File
-  val outFile = new java.io.File(testDir, "HasLoops.v")
-  val args = Array("-i", inputFile.getAbsolutePath, "-o", outFile.getAbsolutePath, "-X", "verilog")
+
+  val inputPath = {
+    val jdkInternalPath = os.resource / "features" / "HasLoops.fir"
+    os.temp(contents = jdkInternalPath.toSource, prefix = "HasLoops.fir")
+  }
+  val outputPath = os.Path(testDir.getAbsolutePath) / "HasLoops.v"
+  val args = Array("-i", inputPath.toString, "-o", outputPath.toString, "-X", "verilog")
 
   "Combinational loops detection" should "run by default" in {
     a[CheckCombLoops.CombLoopException] should be thrownBy {

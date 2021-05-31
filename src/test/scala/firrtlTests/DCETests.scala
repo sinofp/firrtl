@@ -528,11 +528,13 @@ class DCETests extends FirrtlFlatSpec {
 class DCECommandLineSpec extends FirrtlFlatSpec {
 
   val testDir = createTestDirectory("dce")
-  // @todo remove java.nio.file.Paths
-  val inputFile = java.nio.file.Paths.get(getClass.getResource("/features/HasDeadCode.fir").toURI()).toFile()
-  // @todo remove java.io.File
-  val outFile = new java.io.File(testDir, "HasDeadCode.v")
-  val args = Array("-i", inputFile.getAbsolutePath, "-o", outFile.getAbsolutePath, "-X", "verilog")
+
+  val inputPath = {
+    val jdkInternalPath = os.resource / "features" / "HasDeadCode.fir"
+    os.temp(contents = jdkInternalPath.toSource, prefix = "HasDeadCode.fir")
+  }
+  val outputPath = os.Path(testDir.getAbsolutePath) / "HasDeadCode.v"
+  val args = Array("-i", inputPath.toString, "-o", outputPath.toString, "-X", "verilog")
 
   "Dead Code Elimination" should "run by default" in {
     firrtl.Driver.execute(args) match {

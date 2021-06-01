@@ -3,8 +3,8 @@
 package firrtl
 
 import firrtl.options.StageUtils
-import os.{Path, RelPath, SubPath}
 
+import java.io.File
 import scala.collection.Seq
 import scala.sys.process.{stringSeqToProcess, BasicIO, ProcessLogger}
 
@@ -15,12 +15,12 @@ object FileUtils {
     * @return true if the directory exists or if it was successfully created
     */
   def makeDirectory(directoryName: String): Boolean = {
-    // @todo remove java.io.File
-    val dirFile = new java.io.File(directoryName)
-    if (dirFile.exists()) {
-      dirFile.isDirectory
+    val dirPath = getPath(directoryName)
+    if (os.exists(dirPath)) {
+      os.isDir(dirPath)
     } else {
-      dirFile.mkdirs()
+      os.makeDir.all(dirPath)
+      true
     }
   }
 
@@ -31,8 +31,17 @@ object FileUtils {
     * @param directoryPathName a directory hierarchy to delete
     */
   def deleteDirectoryHierarchy(directoryPathName: String): Boolean = {
-    // @todo remove java.io.File
-    deleteDirectoryHierarchy(new java.io.File(directoryPathName))
+    os.FilePath(directoryPathName) match {
+      case path: os.Path =>
+        StageUtils.dramaticError(s"delete directory $path will not delete absolute paths")
+        false
+      case rel: os.RelPath =>
+        val path = os.pwd / rel
+        os.exists(path) && { os.remove.all(path); true }
+      case sub: os.SubPath =>
+        val path = os.pwd / sub
+        os.exists(path) && { os.remove.all(path); true }
+    }
   }
 
   /**
@@ -97,10 +106,16 @@ object FileUtils {
 
   /** Read a text file and return it as a Seq of strings
     * Closes the file after read to avoid dangling file handles
-    * @todo deprecate java.io.File
+    *
     * @param fileName The file to read
     */
-  def getLines(fileName: String): Seq[String] = getLines(new java.io.File(fileName))
+  def getLines(fileName: String): Seq[String] = getLines(getPath(fileName))
+
+  /** Read a text file and return it as  a Seq of strings
+    * Closes the file after read to avoid dangling file handles
+    * @param file an os.Path to be read
+    */
+  def getLines(file: os.Path): Seq[String] = os.read.lines(file) // todo exists, isFile?
 
   /** Read a text file and return it as  a Seq of strings
     * Closes the file after read to avoid dangling file handles
@@ -119,13 +134,18 @@ object FileUtils {
     *
     * @param fileName The file to read
     */
-  def getText(fileName: String): String =
-    // @todo remove java.io.File
-    getText(new java.io.File(fileName))
+  def getText(fileName: String): String = getText(getPath(fileName))
 
   /** Read a text file and return it as  a single string
     * Closes the file after read to avoid dangling file handles
-    * @todo remove java.io.File
+    *
+    * @param file an os.Path to be read
+    */
+  def getText(file: os.Path): String = os.read(file)
+
+  /** Read a text file and return it as  a single string
+    * Closes the file after read to avoid dangling file handles
+    * @todo deprecate java.io.File
     * @param file a java File to be read
     */
   def getText(file: java.io.File): String = {

@@ -67,10 +67,8 @@ class DriverCompatibilitySpec extends AnyFlatSpec with Matchers with PrivateMeth
   }
 
   def createFile(name: String): Unit = {
-    // @todo remove java.io.File
-    val file = new java.io.File(name)
-    file.getParentFile.getCanonicalFile.mkdirs()
-    file.createNewFile()
+    val file = FileUtils.getPath(name)
+    if (!os.exists(file)) os.write(file, "", createFolders = true)
   }
 
   behavior.of(classOf[AddImplicitAnnotationFile].toString)
@@ -125,9 +123,8 @@ class DriverCompatibilitySpec extends AnyFlatSpec with Matchers with PrivateMeth
   it should "add an FirrtlFileAnnotation if a TopNameAnnotation is present" in
     new PhaseFixture(new AddImplicitFirrtlFile) {
       val annotations = Seq(TopNameAnnotation("foo"))
-      // @todo remove java.io.File
       val expected = annotations.toSet +
-        FirrtlFileAnnotation(new java.io.File("foo.fir").getPath())
+        FirrtlFileAnnotation((os.pwd / "foo.fir").toString)
 
       phase.transform(annotations).toSet should be(expected)
     }

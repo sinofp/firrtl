@@ -5,6 +5,8 @@ package memlib
 import net.jcazevedo.moultingyaml._
 import firrtl.FileUtils
 
+import scala.collection.mutable.ListBuffer
+
 object CustomYAMLProtocol extends DefaultYamlProtocol {
   // bottom depends on top
   implicit val _pin = yamlFormat1(Pin)
@@ -20,8 +22,7 @@ case class Config(pin: Pin, source: Source, top: Top)
 
 class YamlFileReader(file: String) {
   def parse[A](implicit reader: YamlReader[A]): Seq[A] = {
-    // @todo remove java.io.File
-    if (new java.io.File(file).exists) {
+    if (os.exists(FileUtils.getPath(file))) {
       val yamlString = FileUtils.getText(file)
       yamlString.parseYamls.flatMap(x =>
         try Some(reader.read(x))
@@ -32,16 +33,13 @@ class YamlFileReader(file: String) {
 }
 
 class YamlFileWriter(file: String) {
-  // @todo remove java.io
-  val outputBuffer = new java.io.CharArrayWriter
+  val outputBuffer = new ListBuffer[String]
   val separator = "--- \n"
   def append(in: YamlValue): Unit = {
-    outputBuffer.append(s"$separator${in.prettyPrint}")
+    outputBuffer += s"$separator${in.prettyPrint}"
   }
   def dump(): Unit = {
-    // @todo remove java.io
-    val outputFile = new java.io.PrintWriter(file)
-    outputFile.write(outputBuffer.toString)
-    outputFile.close()
+    val outputFile = FileUtils.getPath(file)
+    os.write(outputFile, outputBuffer.mkString)
   }
 }

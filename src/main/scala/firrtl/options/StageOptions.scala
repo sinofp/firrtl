@@ -2,7 +2,10 @@
 
 package firrtl.options
 
+import firrtl.FileUtils
+
 /** Options that every stage shares
+  *
   * @param targetDirName a target (build) directory
   * @param an input annotation file
   * @param programArgs explicit program arguments
@@ -50,25 +53,18 @@ class StageOptions private[firrtl] (
      */
     val file = {
       val f = if (suffix.nonEmpty && !filename.endsWith(suffix.get)) {
-        // @todo remove java.io.File
-        new java.io.File(filename + suffix.get)
+        os.FilePath(filename + suffix.get)
       } else {
-        // @todo remove java.io.File
-        new java.io.File(filename)
+        os.FilePath(filename)
       }
-      if (f.isAbsolute) {
-        f
-      } else {
-        // @todo remove java.io.File
-        new java.io.File(targetDir + "/" + f)
+      f match {
+        case path: os.Path    => path
+        case sub:  os.SubPath => FileUtils.getPath(targetDir) / sub
+        case rel:  os.RelPath => FileUtils.getPath(targetDir) / rel
       }
-    }.toPath.normalize.toFile
-
-    file.getParentFile match {
-      case null                       =>
-      case parent if (!parent.exists) => parent.mkdirs()
-      case _                          =>
     }
+
+    os.makeDir.all(file / os.up)
 
     file.toString
   }

@@ -14,6 +14,7 @@ object BackendCompilationUtilities extends LazyLogging {
   /** Parent directory for tests */
   // @todo remove java.io.File
   lazy val TestDirectory = new java.io.File("test_run_dir")
+  lazy val TestPath = os.pwd / "test_run_dir"
 
   def timeStamp: String = {
     val format = new SimpleDateFormat("yyyyMMddHHmmss")
@@ -41,6 +42,16 @@ object BackendCompilationUtilities extends LazyLogging {
     out.close()
   }
 
+  /**
+    * Copy the contents of a resource to a destination file.
+    * @param name the name of the resource
+    * @param file the os.Path to write it into
+    */
+  def copyResourceToFile(name: String, file: os.Path): Unit = {
+    val resource = os.resource / name.split('/').filterNot(_.isEmpty).foldLeft(os.sub)(_ / _)
+    os.write(file, resource.toSource)
+  }
+
   /** Create a test directory
     *
     * Will create outer directory called testName then inner directory based on
@@ -50,8 +61,18 @@ object BackendCompilationUtilities extends LazyLogging {
   def createTestDirectory(testName: String): java.io.File = {
     val outer = new java.io.File(TestDirectory, testName)
     outer.mkdirs()
-    // @todo remove java.io.File
     java.nio.file.Files.createTempDirectory(outer.toPath, timeStamp).toFile
+  }
+
+  /** Create a test directory
+    *
+    * Will create outer directory called testName then inner directory based on
+    * the current time
+    */
+  def createTestDirectory1(testName: String): os.Path = {
+    val outer = TestPath / testName
+    os.makeDir.all(outer)
+    os.temp.dir(dir = outer, prefix = timeStamp, deleteOnExit = false)
   }
 
   // @todo deprecate java.io.File
@@ -66,6 +87,13 @@ object BackendCompilationUtilities extends LazyLogging {
     vf
   }
 
+  def makeHarness1(template: String => String, post: String)(f: os.Path): os.Path = {
+    val prefix = f.toString.split("/").last
+    val vf = FileUtils.getPath(f.toString + post)
+    os.write(vf, template(prefix))
+    vf
+  }
+
   /**
     * compule chirrtl to verilog by using a separate process
     *
@@ -76,6 +104,18 @@ object BackendCompilationUtilities extends LazyLogging {
     */
   def firrtlToVerilog(prefix: String, dir: java.io.File): ProcessBuilder = {
     Process(Seq("firrtl", "-i", s"$prefix.fir", "-o", s"$prefix.v", "-X", "verilog"), dir)
+  }
+
+  /**
+    * compile firrtl to verilog by using a separate process
+    *
+    * @param prefix basename of the file
+    * @param dir    directory where file lives
+    * @return       true if compiler completed successfully
+    */
+  def firrtlToVerilog(prefix: String, dir: os.Path): ProcessBuilder = {
+    // cwd is File, so we can't avoid java.io here.
+    Process(Seq("firrtl", "-i", s"$prefix.fir", "-o", s"$prefix.v", "-X", "verilog"), new java.io.File(dir.toString))
   }
 
   /** Generates a Verilator invocation to convert Verilog sources to C++
@@ -169,8 +209,98 @@ object BackendCompilationUtilities extends LazyLogging {
     command
   }
 
+  /** Generates a Verilator invocation to convert Verilog sources to C++
+    * simulation sources.
+    *
+    * The Verilator prefix will be V\$dutFile, and running this will generate
+    * C++ sources and headers as well as a makefile to compile them.
+    *
+    * Verilator will automatically locate the top-level module as the one among
+    * all the files which are not included elsewhere. If multiple ones exist,
+    * the compilation will fail.
+    *
+    * If the file BlackBoxSourceHelper.fileListName (or an overridden .f resource filename that is
+    * specified with the optional resourceFileName parameter) exists in the output directory,
+    * it contains a list of source files to be included. Filter out any files in the vSources
+    * sequence that are in this file so we don't include the same file multiple times.
+    * This complication is an attempt to work-around the fact that clients used to have to
+    * explicitly include additional Verilog sources. Now, more of that is automatic.
+    *
+    * @param dutFile name of the DUT .v without the .v extension
+    * @param dir output directory
+    * @param vSources list of additional Verilog sources to compile
+    * @param cppHarness C++ testharness to compile/link against
+    * @param suppressVcd specifies if VCD tracing should be suppressed
+    * @param resourceFileName specifies what filename to look for to find a .f file
+    * @param extraCmdLineArgs list of additional command line arguments
+    */
+  def verilogToCpp1(
+    dutFile:          String,
+    dir:              os.Path,
+    vSources:         Seq[os.Path],
+    cppHarness:       os.Path,
+    suppressVcd:      Boolean = false,
+    resourceFileName: String = firrtl.transforms.BlackBoxSourceHelper.defaultFileListName,
+    extraCmdLineArgs: Seq[String] = Seq.empty
+  ): ProcessBuilder = {
+
+    val topModule = dutFile
+
+    val list_file = dir / resourceFileName
+    val blackBoxVerilogList = {
+      if (os.exists(list_file)) {
+        Seq("-f", list_file.toString)
+      } else {
+        Seq.empty[String]
+      }
+    }
+
+    // Don't include the same file multiple times.
+    // If it's in the main .f resource file, don't explicitly include it on the command line.
+    // Build a set of canonical file paths to use as a filter to exclude already included additional Verilog sources.
+    val blackBoxHelperFiles: Set[String] = {
+      if (os.exists(list_file)) {
+        FileUtils.getLines(list_file).toSet
+      } else {
+        Set.empty
+      }
+    }
+    val vSourcesFiltered = vSources.filterNot(f => blackBoxHelperFiles.contains(f.toString))
+    val command = Seq(
+      "verilator",
+      "--cc",
+      s"$dir/$dutFile.v"
+    ) ++
+      extraCmdLineArgs ++
+      blackBoxVerilogList ++
+      vSourcesFiltered.flatMap(file => Seq("-v", file.toString)) ++
+      Seq("--assert", "-Wno-fatal", "-Wno-WIDTH", "-Wno-STMTDLY") ++ {
+      if (suppressVcd) { Seq.empty }
+      else { Seq("--trace") }
+    } ++
+      Seq(
+        "-O1",
+        "--top-module",
+        topModule,
+        "+define+TOP_TYPE=V" + dutFile,
+        s"+define+PRINTF_COND=!$topModule.reset",
+        s"+define+STOP_COND=!$topModule.reset",
+        "-CFLAGS",
+        s"""-Wno-undefined-bool-conversion -O1 -DTOP_TYPE=V$dutFile -DVL_USER_FINISH -include V$dutFile.h""",
+        "-Mdir",
+        dir.toString,
+        "--exe",
+        cppHarness.toString
+      )
+    logger.info(s"${command.mkString(" ")}")
+    command
+  }
+
   // @todo deprecate java.io.File
   def cppToExe(prefix: String, dir: java.io.File): ProcessBuilder =
+    Seq("make", "-C", dir.toString, "-j", "-f", s"V$prefix.mk", s"V$prefix")
+
+  def cppToExe(prefix: String, dir: os.Path): ProcessBuilder =
     Seq("make", "-C", dir.toString, "-j", "-f", s"V$prefix.mk", s"V$prefix")
 
   def executeExpectingFailure(
@@ -194,10 +324,33 @@ object BackendCompilationUtilities extends LazyLogging {
     triggered || (e != 0 && (e != 134 || !assertionMessageSupplied))
   }
 
+  def executeExpectingFailure1(prefix: String, dir: os.Path, assertionMsg: String = ""): Boolean = {
+    var triggered = false
+    val assertionMessageSupplied = assertionMsg != "" // todo make assertionMsg Option[String]?
+    val e = os
+      .proc(s"./V$prefix")
+      .call(
+        cwd = dir,
+        check = false,
+        stdout = os.ProcessOutput.Readlines(line => {
+          triggered = triggered || (assertionMessageSupplied && line.contains(assertionMsg))
+          logger.info(line)
+        }),
+        stderr = os.ProcessOutput.Readlines(logger.warn(_))
+      )
+      .exitCode
+    // Fail if a line contained an assertion or if we get a non-zero exit code
+    //  or, we get a SIGABRT (assertion failure) and we didn't provide a specific assertion message
+    triggered || (e != 0 && (e != 134 || !assertionMessageSupplied))
+  }
+
   // @todo deprecate java.io.File
   def executeExpectingSuccess(prefix: String, dir: java.io.File): Boolean = {
     !executeExpectingFailure(prefix, dir)
   }
+
+  def executeExpectingSuccess(prefix: String, dir: os.Path): Boolean =
+    !executeExpectingFailure1(prefix, dir)
 
   /** Creates and runs a Yosys script that creates and runs SAT on a miter
     * circuit. Returns true if SAT succeeds, false otherwise
@@ -220,6 +373,29 @@ object BackendCompilationUtilities extends LazyLogging {
     testDir:      java.io.File,
     timesteps:    Int = 1
   ): Boolean = {
+    !yosysExpectFailure1(customTop, referenceTop, testDir, timesteps)
+  }
+
+  /** Creates and runs a Yosys script that creates and runs SAT on a miter
+    * circuit. Returns true if SAT succeeds, false otherwise
+    *
+    * The custom and reference Verilog files must not contain any modules with
+    * the same name otherwise Yosys will not be able to create a miter circuit
+    *
+    * @param customTop    name of the DUT with custom transforms without the .v
+    *                     extension
+    * @param referenceTop name of the DUT without custom transforms without the
+    *                     .v extension
+    * @param testDir      directory containing verilog files
+    * @param timesteps    the maximum number of timesteps for Yosys equivalence
+    *                     checking to consider
+    */
+  def yosysExpectSuccess1(
+    customTop:    String,
+    referenceTop: String,
+    testDir:      os.Path,
+    timesteps:    Int = 1
+  ): Boolean = {
     !yosysExpectFailure(customTop, referenceTop, testDir, timesteps)
   }
 
@@ -238,7 +414,7 @@ object BackendCompilationUtilities extends LazyLogging {
     *                     checking to consider
     * @todo deprecate java.io.File
     */
-  def yosysExpectFailure(
+  def yosysExpectFailure1(
     customTop:    String,
     referenceTop: String,
     testDir:      java.io.File,
@@ -271,6 +447,52 @@ object BackendCompilationUtilities extends LazyLogging {
     val command = s"yosys -s $scriptFileName" #> new java.io.File(resultFileName)
     command.! != 0
   }
+
+  /** Creates and runs a Yosys script that creates and runs SAT on a miter
+    * circuit. Returns false if SAT succeeds, true otherwise
+    *
+    * The custom and reference Verilog files must not contain any modules with
+    * the same name otherwise Yosys will not be able to create a miter circuit
+    *
+    * @param customTop    name of the DUT with custom transforms without the .v
+    *                     extension
+    * @param referenceTop name of the DUT without custom transforms without the
+    *                     .v extension
+    * @param testDir      directory containing verilog files
+    * @param timesteps    the maximum number of timesteps for Yosys equivalence
+    *                     checking to consider
+    */
+  def yosysExpectFailure(
+    customTop:    String,
+    referenceTop: String,
+    testDir:      os.Path,
+    timesteps:    Int = 1
+  ): Boolean = {
+
+    val scriptFile = testDir / "yosys_script"
+    os.write(
+      scriptFile,
+      s"""read_verilog $testDir/$customTop.v
+         |prep -flatten -top $customTop; proc; opt; memory
+         |design -stash custom
+         |read_verilog $testDir/$referenceTop.v
+         |prep -flatten -top $referenceTop; proc; opt; memory
+         |design -stash reference
+         |design -copy-from custom -as custom $customTop
+         |design -copy-from reference -as reference $referenceTop
+         |equiv_make custom reference equiv
+         |hierarchy -top equiv
+         |prep -flatten -top equiv
+         |clean -purge
+         |equiv_simple -seq $timesteps
+         |equiv_induct -seq $timesteps
+         |equiv_status -assert
+         """.stripMargin
+    )
+
+    val resultFile = testDir / "yosys_results"
+    os.proc(Seq("yosys", "-s", s"$scriptFile")).call(stdout = resultFile, check = false).exitCode != 0
+  }
 }
 
 @deprecated("use object BackendCompilationUtilities", "FIRRTL 1.3")
@@ -281,13 +503,20 @@ trait BackendCompilationUtilities extends LazyLogging {
   // @todo deprecate java.io.File
   def copyResourceToFile(name: String, file: java.io.File): Unit =
     BackendCompilationUtilities.copyResourceToFile(name, file)
+  def copyResourceToFile(name: String, file: os.Path): Unit =
+    BackendCompilationUtilities.copyResourceToFile(name, file)
   // @todo deprecate java.io.File
-  def createTestDirectory(testName: String): java.io.File = BackendCompilationUtilities.createTestDirectory(testName)
+  def createTestDirectory(testName:  String): java.io.File = BackendCompilationUtilities.createTestDirectory(testName)
+  def createTestDirectory1(testName: String): os.Path = BackendCompilationUtilities.createTestDirectory1(testName)
   // @todo deprecate java.io.File
   def makeHarness(template: String => String, post: String)(f: java.io.File): java.io.File =
     BackendCompilationUtilities.makeHarness(template, post)(f)
+  def makeHarness(template: String => String, post: String)(f: os.Path): os.Path =
+    BackendCompilationUtilities.makeHarness1(template, post)(f)
   // @todo deprecate java.io.File
   def firrtlToVerilog(prefix: String, dir: java.io.File): ProcessBuilder =
+    BackendCompilationUtilities.firrtlToVerilog(prefix, dir)
+  def firrtlToVerilog(prefix: String, dir: os.Path): ProcessBuilder =
     BackendCompilationUtilities.firrtlToVerilog(prefix, dir)
   def verilogToCpp(
     dutFile: String,
@@ -302,8 +531,18 @@ trait BackendCompilationUtilities extends LazyLogging {
   ): ProcessBuilder = {
     BackendCompilationUtilities.verilogToCpp(dutFile, dir, vSources, cppHarness, suppressVcd, resourceFileName)
   }
+  def verilogToCpp1(
+    dutFile:          String,
+    dir:              os.Path,
+    vSources:         Seq[os.Path],
+    cppHarness:       os.Path,
+    suppressVcd:      Boolean = false,
+    resourceFileName: String = firrtl.transforms.BlackBoxSourceHelper.defaultFileListName
+  ): ProcessBuilder =
+    BackendCompilationUtilities.verilogToCpp1(dutFile, dir, vSources, cppHarness, suppressVcd, resourceFileName)
   // @todo deprecate java.io.File
   def cppToExe(prefix: String, dir: java.io.File): ProcessBuilder = BackendCompilationUtilities.cppToExe(prefix, dir)
+  def cppToExe(prefix: String, dir: os.Path):      ProcessBuilder = BackendCompilationUtilities.cppToExe(prefix, dir)
   def executeExpectingFailure(
     prefix: String,
     // @todo deprecate java.io.File
@@ -312,7 +551,11 @@ trait BackendCompilationUtilities extends LazyLogging {
   ): Boolean = {
     BackendCompilationUtilities.executeExpectingFailure(prefix, dir, assertionMsg)
   }
+  def executeExpectingFailure1(prefix: String, dir: os.Path, assertionMsg: String = ""): Boolean =
+    BackendCompilationUtilities.executeExpectingFailure1(prefix, dir, assertionMsg)
   // @todo deprecate java.io.File
   def executeExpectingSuccess(prefix: String, dir: java.io.File): Boolean =
+    BackendCompilationUtilities.executeExpectingSuccess(prefix, dir)
+  def executeExpectingSuccess(prefix: String, dir: os.Path): Boolean =
     BackendCompilationUtilities.executeExpectingSuccess(prefix, dir)
 }

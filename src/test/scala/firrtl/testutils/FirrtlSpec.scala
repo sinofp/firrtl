@@ -89,7 +89,7 @@ trait FirrtlRunners extends BackendCompilationUtilities {
   ): Unit = {
     val circuit = Parser.parse(input.split("\n").toIterator)
     val prefix = circuit.main
-    val testDir = createTestDirectory(prefix + "_equivalence_test")
+    val testDir = createTestDirectory1(prefix + "_equivalence_test")
 
     def toAnnos(xforms: Seq[Transform]) = xforms.map(RunFirrtlTransformAnnotation(_))
 
@@ -117,7 +117,7 @@ trait FirrtlRunners extends BackendCompilationUtilities {
     val refName =
       refResult.collectFirst({ case stage.FirrtlCircuitAnnotation(c) => c.main }).getOrElse(refSuggestedName)
 
-    assert(BackendCompilationUtilities.yosysExpectSuccess(customName, refName, testDir, timesteps))
+    assert(BackendCompilationUtilities.yosysExpectSuccess1(customName, refName, testDir, timesteps))
   }
 
   /** Check equivalence of Firrtl with reference Verilog
@@ -141,7 +141,7 @@ trait FirrtlRunners extends BackendCompilationUtilities {
     val inputName = circuit.main
     require(refName != inputName, s"Name of reference Verilog must not match name of input FIRRTL: $refName")
 
-    val testDir = createTestDirectory(inputName + "_equivalence_test")
+    val testDir = createTestDirectory1(inputName + "_equivalence_test")
 
     val annos = List(
       TargetDirAnnotation(testDir.toString),
@@ -154,12 +154,10 @@ trait FirrtlRunners extends BackendCompilationUtilities {
     (new firrtl.stage.FirrtlStage).execute(Array(), annos)
 
     // Write reference
-    // @todo remove java.io
-    val w = new java.io.FileWriter(new java.io.File(testDir, s"$refName.v"))
-    w.write(referenceVerilog)
-    w.close()
+    val f = testDir / s"$refName.v"
+    os.write(f, referenceVerilog)
 
-    assert(BackendCompilationUtilities.yosysExpectSuccess(inputName, refName, testDir, timesteps))
+    assert(BackendCompilationUtilities.yosysExpectSuccess1(inputName, refName, testDir, timesteps))
   }
 
   /** Compiles input Firrtl to Verilog */
@@ -180,15 +178,11 @@ trait FirrtlRunners extends BackendCompilationUtilities {
     * @return Verilator return 0
     */
   def lintVerilog(inputVerilog: String): Unit = {
-    val testDir = createTestDirectory(s"${this.getClass.getSimpleName}_lint")
-    // @todo remove java.io
-    val filename = new java.io.File(testDir, "test.v")
-    // @todo remove java.io
-    val w = new java.io.FileWriter(filename)
-    w.write(inputVerilog)
-    w.close()
+    val testDir = createTestDirectory1(s"${this.getClass.getSimpleName}_lint")
+    val file = testDir / "test.v"
+    os.write(file, inputVerilog)
 
-    val cmd = Seq("verilator", "--lint-only", filename.toString)
+    val cmd = Seq("verilator", "--lint-only", file.toString)
     assert(cmd.!(loggingProcessLogger) == 0, "Lint must pass")
   }
 
@@ -206,8 +200,7 @@ trait FirrtlRunners extends BackendCompilationUtilities {
     annotations:      AnnotationSeq = Seq.empty
   ): java.io.File = {
     val testDir = createTestDirectory(prefix)
-    // @todo remove java.io
-    val inputFile = new java.io.File(testDir, s"${prefix}.fir")
+    val inputFile = os.Path(testDir.getAbsolutePath) / s"$prefix.fir"
     copyResourceToFile(s"${srcDir}/${prefix}.fir", inputFile)
 
     val annos =
@@ -236,20 +229,19 @@ trait FirrtlRunners extends BackendCompilationUtilities {
     customTransforms: Seq[Transform] = Seq.empty,
     annotations:      AnnotationSeq = Seq.empty
   ) = {
-    val testDir = compileFirrtlTest(prefix, srcDir, customTransforms, annotations)
+    val testDir = os.Path(compileFirrtlTest(prefix, srcDir, customTransforms, annotations).getAbsolutePath)
     // @todo remove java.io
-    val harness = new java.io.File(testDir, s"top.cpp")
+    val harness = testDir / "top.cpp"
     copyResourceToFile(cppHarnessResourceName, harness)
 
     // Note file copying side effect
     val verilogFiles = verilogPrefixes.map { vprefix =>
-      // @todo remove java.io
-      val file = new java.io.File(testDir, s"$vprefix.v")
+      val file = testDir / s"$vprefix.v"
       copyResourceToFile(s"$srcDir/$vprefix.v", file)
       file
     }
 
-    verilogToCpp(prefix, testDir, verilogFiles, harness) #&&
+    verilogToCpp1(prefix, testDir, verilogFiles, harness) #&&
       cppToExe(prefix, testDir) !
       loggingProcessLogger
     assert(executeExpectingSuccess(prefix, testDir))

@@ -2,7 +2,7 @@
 
 package firrtl.options.phases
 
-import firrtl.AnnotationSeq
+import firrtl.{AnnotationSeq, FileUtils}
 import firrtl.annotations.{Annotation, DeletedAnnotation, JsonProtocol}
 import firrtl.options.{CustomFileEmission, Dependency, Phase, PhaseException, StageOptions, Unserializable, Viewer}
 
@@ -35,13 +35,12 @@ class WriteOutputAnnotations extends Phase {
 
         filesWritten.get(canonical) match {
           case None =>
-            // @todo remove java.io
-            val w = new java.io.BufferedOutputStream(new java.io.FileOutputStream(filename))
+            val buffer = new mutable.ListBuffer[Byte]
             a.getBytes match {
-              case arr: mutable.WrappedArray[Byte] => w.write(arr.array.asInstanceOf[Array[Byte]])
-              case other => other.foreach(w.write(_))
+              case arr: mutable.WrappedArray[Byte] => buffer ++= arr.array.asInstanceOf[Array[Byte]]
+              case other => other.foreach(buffer += _)
             }
-            w.close()
+            os.write.over(os.Path(canonical), buffer.toArray.asInstanceOf[Array[Byte]])
             filesWritten(canonical) = a
           case Some(first) =>
             val msg =
@@ -60,12 +59,10 @@ class WriteOutputAnnotations extends Phase {
     }
 
     sopts.annotationFileOut match {
-      case None       =>
+      case None =>
       case Some(file) =>
-        // @todo remove java.io
-        val pw = new java.io.PrintWriter(sopts.getBuildFileName(file, Some(".anno.json")))
-        pw.write(JsonProtocol.serialize(serializable))
-        pw.close()
+        val f = FileUtils.getPath(sopts.getBuildFileName(file, Some(".anno.json")))
+        os.write.over(f, JsonProtocol.serialize(serializable))
     }
 
     annotations

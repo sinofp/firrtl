@@ -46,9 +46,11 @@ case class LoadMemoryAnnotation(
       case other => {
         // @todo remove java.io.File
         if (other.last.indexOf(java.io.File.separator) != -1) {
+          // ~/.config/sxhkd/sxhkdrc
           (fileName, "")
         } else {
-          (other.reverse.tail.reverse.mkString("."), "." + other.last)
+          // ~/.config/nvim/init.vim
+          (other.init.mkString("."), "." + other.last)
         }
       }
     }

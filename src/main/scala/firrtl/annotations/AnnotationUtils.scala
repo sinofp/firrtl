@@ -8,9 +8,21 @@ import firrtl.ir._
 // @todo deprecate java.io.File
 case class InvalidAnnotationFileException(file: java.io.File, cause: FirrtlUserException = null)
     extends FirrtlUserException(s"$file", cause)
+object InvalidAnnotationFileException {
+  def apply(file: os.Path, cause: FirrtlUserException = null): InvalidAnnotationFileException =
+    InvalidAnnotationFileException(new java.io.File(file.toString), cause)
+}
 case class InvalidAnnotationJSONException(msg: String) extends FirrtlUserException(msg)
 // @todo deprecate java.io.File
 case class AnnotationFileNotFoundException(file: java.io.File)
+    extends FirrtlUserException(
+      s"Annotation file $file not found!"
+    )
+object AnnotationFileNotFoundException {
+  def apply(file: os.Path): AnnotationFileNotFoundException =
+    AnnotationFileNotFoundException(new java.io.File(file.toString))
+}
+case class AnnotationFileNotFoundException1(file: os.Path)
     extends FirrtlUserException(
       s"Annotation file $file not found!"
     )

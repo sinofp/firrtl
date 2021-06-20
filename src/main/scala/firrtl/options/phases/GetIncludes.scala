@@ -24,10 +24,9 @@ class GetIncludes extends Phase {
     * @throws annotations.AnnotationFileNotFoundException if the file does not exist
     */
   private def readAnnotationsFromFile(filename: String): AnnotationSeq = {
-    // @todo remove java.io.File
-    val file = new java.io.File(filename).getCanonicalFile
-    if (!file.exists) { throw new AnnotationFileNotFoundException(file) }
-    JsonProtocol.deserialize(file)
+    val file = FileUtils.getPath(filename)
+    if (!os.exists(file)) throw AnnotationFileNotFoundException(file)
+    JsonProtocol.deserialize(os.read(file))
   }
 
   /** Recursively read all [[Annotation]]s from any [[InputAnnotationFileAnnotation]]s while making sure that each file is

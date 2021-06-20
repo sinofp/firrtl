@@ -18,9 +18,7 @@ case object E extends NoTargetAnnotation
 
 class GetIncludesSpec extends AnyFlatSpec with Matchers with BackendCompilationUtilities with firrtl.testutils.Utils {
 
-  // @todo remove java.io
-  val dir = new java.io.File("test_run_dir/GetIncludesSpec")
-  dir.mkdirs()
+  val dir = BackendCompilationUtilities.createTestDirectory1("GetIncludesSpec")
 
   def ref(filename: String): InputAnnotationFileAnnotation = InputAnnotationFileAnnotation(s"$dir/$filename.anno.json")
 
@@ -33,20 +31,16 @@ class GetIncludesSpec extends AnyFlatSpec with Matchers with BackendCompilationU
   }
 
   val files = Seq(
-    // @todo remove java.io
-    new java.io.File(dir + "/a.anno.json") -> Seq(A, ref("b")),
-    new java.io.File(dir + "/b.anno.json") -> Seq(B, ref("c"), ref("a")),
-    new java.io.File(dir + "/c.anno.json") -> Seq(C, ref("d"), ref("e")),
-    new java.io.File(dir + "/d.anno.json") -> Seq(D),
-    new java.io.File(dir + "/e.anno.json") -> Seq(E)
+    dir / "a.anno.json" -> Seq(A, ref("b")),
+    dir / "b.anno.json" -> Seq(B, ref("c"), ref("a")),
+    dir / "c.anno.json" -> Seq(C, ref("d"), ref("e")),
+    dir / "d.anno.json" -> Seq(D),
+    dir / "e.anno.json" -> Seq(E)
   )
 
   files.foreach {
     case (file, annotations) =>
-      // @todo remove java.io
-      val pw = new java.io.PrintWriter(file)
-      pw.write(JsonProtocol.serialize(annotations))
-      pw.close()
+      os.write(file, JsonProtocol.serialize(annotations))
   }
 
   class Fixture { val phase: Phase = new GetIncludes }

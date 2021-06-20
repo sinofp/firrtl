@@ -9,7 +9,9 @@ import firrtl.ir._
 case class InvalidAnnotationFileException(file: java.io.File, cause: FirrtlUserException = null)
     extends FirrtlUserException(s"$file", cause)
 object InvalidAnnotationFileException {
-  def apply(file: os.Path, cause: FirrtlUserException = null): InvalidAnnotationFileException =
+  def apply(file: os.Path): InvalidAnnotationFileException =
+    InvalidAnnotationFileException(new java.io.File(file.toString))
+  def apply(file: os.Path, cause: FirrtlUserException): InvalidAnnotationFileException =
     InvalidAnnotationFileException(new java.io.File(file.toString), cause)
 }
 case class InvalidAnnotationJSONException(msg: String) extends FirrtlUserException(msg)

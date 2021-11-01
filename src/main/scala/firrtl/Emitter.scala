@@ -196,10 +196,11 @@ object EmitAllModulesAnnotation extends HasShellOptions {
     ),
     new ShellOption[Unit](
       longOption = "no-random-init",
-      toAnnotationSeq = _ => Seq(
-        CustomDefaultMemoryEmission(MemoryNoInit),
-        CustomDefaultRegisterEmission(useInitAsPreset = true, disableRandomization = true)
-      ),
+      toAnnotationSeq = _ =>
+        Seq(
+          CustomDefaultMemoryEmission(MemoryNoInit),
+          CustomDefaultRegisterEmission(useInitAsPreset = true, disableRandomization = true)
+        ),
       helpText = "Disable random initialization for memory and registers"
     )
   )

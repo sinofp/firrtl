@@ -859,11 +859,15 @@ class VerilogEmitterSpec extends FirrtlFlatSpec {
           |    out <= mem.r.data
           |""".stripMargin
     val circuit = Seq(ToWorkingIR, ResolveKinds, InferTypes).foldLeft(parse(input)) { case (c, p) => p.run(c) }
-    val state = CircuitState(circuit, LowForm, Seq(
-      EmitCircuitAnnotation(classOf[VerilogEmitter]),
-      CustomDefaultMemoryEmission(MemoryNoInit),
-      CustomDefaultRegisterEmission(useInitAsPreset = true, disableRandomization = true),
-    ))
+    val state = CircuitState(
+      circuit,
+      LowForm,
+      Seq(
+        EmitCircuitAnnotation(classOf[VerilogEmitter]),
+        CustomDefaultMemoryEmission(MemoryNoInit),
+        CustomDefaultRegisterEmission(useInitAsPreset = true, disableRandomization = true)
+      )
+    )
     val result = (new VerilogEmitter).execute(state)
     assert(!result.getEmittedCircuit.value.contains("RANDOMIZE"))
   }
